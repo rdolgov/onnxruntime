@@ -14,13 +14,13 @@ if (!BUILD_DEFS.DISABLE_TRAINING) {
   ortWasmFactory = require('./binding/ort-training-wasm-simd.js');
 } else {
   ortWasmFactory =
-      BUILD_DEFS.DISABLE_WEBGPU ? require('./binding/ort-wasm.js') : require('./binding/ort-wasm-simd.jsep.js');
+    BUILD_DEFS.DISABLE_WEBGPU ? require('./binding/ort-wasm.js') : require('./binding/ort-wasm-simd.jsep.js');
 }
 
 const ortWasmFactoryThreaded: EmscriptenModuleFactory<OrtWasmModule> = !BUILD_DEFS.DISABLE_WASM_THREAD ?
-    (BUILD_DEFS.DISABLE_WEBGPU ? require('./binding/ort-wasm-threaded.js') :
-                                 require('./binding/ort-wasm-simd-threaded.jsep.js')) :
-    ortWasmFactory;
+  (BUILD_DEFS.DISABLE_WEBGPU ? require('./binding/ort-wasm-threaded.js') :
+    require('./binding/ort-wasm-simd-threaded.jsep.js')) :
+  ortWasmFactory;
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 let wasm: OrtWasmModule|undefined;
@@ -39,9 +39,9 @@ const isMultiThreadSupported = (numThreads: number): boolean => {
     if (typeof self !== 'undefined' && !self.crossOriginIsolated) {
       // eslint-disable-next-line no-console
       console.warn(
-          'env.wasm.numThreads is set to ' + numThreads +
-          ', but this will not work unless you enable crossOriginIsolated mode. ' +
-          'See https://web.dev/cross-origin-isolation-guide/ for more info.');
+        'env.wasm.numThreads is set to ' + numThreads +
+        ', but this will not work unless you enable crossOriginIsolated mode. ' +
+        'See https://web.dev/cross-origin-isolation-guide/ for more info.');
     }
     return false;
   }
@@ -50,9 +50,9 @@ const isMultiThreadSupported = (numThreads: number): boolean => {
   if (typeof process !== 'undefined' && process.versions && process.versions.node) {
     // eslint-disable-next-line no-console
     console.warn(
-        'env.wasm.numThreads is set to ' + numThreads +
-        ', however, currently onnxruntime-web does not support multi-threads in Node.js. ' +
-        'Please consider using onnxruntime-node for performance critical scenarios.');
+      'env.wasm.numThreads is set to ' + numThreads +
+      ', however, currently onnxruntime-web does not support multi-threads in Node.js. ' +
+      'Please consider using onnxruntime-node for performance critical scenarios.');
   }
 
   try {
@@ -135,6 +135,12 @@ export const initializeWebAssembly = async(flags: Env.WebAssemblyFlags): Promise
   const wasmFileName = getWasmFileName(useSimd, useThreads);
   const wasmPathOverride = typeof wasmPaths === 'object' ? wasmPaths[wasmFileName] : undefined;
 
+  const workerPaths = flags.workerPaths;
+  const [threadedMainScriptOverride, threadedWorkerOverride] = typeof workerPaths === 'object' ?
+    [workerPaths['ort-wasm-threaded-main-script'], workerPaths['ort-wasm-threaded-worker-script']] :
+    [undefined, undefined];
+
+
   let isTimeout = false;
 
   const tasks: Array<Promise<void>> = [];
@@ -155,14 +161,18 @@ export const initializeWebAssembly = async(flags: Env.WebAssemblyFlags): Promise
     const config: Partial<OrtWasmModule> = {
       locateFile: (fileName: string, scriptDirectory: string) => {
         if (!BUILD_DEFS.DISABLE_WASM_THREAD && useThreads && fileName.endsWith('.worker.js') &&
-            typeof Blob !== 'undefined') {
-          return URL.createObjectURL(new Blob(
+          typeof Blob !== 'undefined') {
+          if (threadedWorkerOverride) {
+            return threadedWorkerOverride;
+          } else {
+            return URL.createObjectURL(new Blob(
               [
                 // This require() function is handled by esbuild plugin to load file content as string.
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
                 require('./binding/ort-wasm-threaded.worker.js')
               ],
               {type: 'text/javascript'}));
+          }
         }
 
         if (fileName.endsWith('.wasm')) {
@@ -191,6 +201,8 @@ export const initializeWebAssembly = async(flags: Env.WebAssemblyFlags): Promise
       config.numThreads = numThreads;
       if (typeof Blob === 'undefined') {
         config.mainScriptUrlOrBlob = path.join(__dirname, 'ort-wasm-threaded.js');
+      } else if (threadedMainScriptOverride) {
+        config.mainScriptUrlOrBlob = threadedMainScriptOverride;
       } else {
         const scriptSourceCode = `var ortWasmThreaded=${factory.toString()};`;
         config.mainScriptUrlOrBlob = new Blob([scriptSourceCode], {type: 'text/javascript'});
@@ -198,19 +210,19 @@ export const initializeWebAssembly = async(flags: Env.WebAssemblyFlags): Promise
     }
 
     factory(config).then(
-        // wasm module initialized successfully
-        module => {
-          initializing = false;
-          initialized = true;
-          wasm = module;
-          resolve();
-        },
-        // wasm module failed to initialize
-        (what) => {
-          initializing = false;
-          aborted = true;
-          reject(what);
-        });
+      // wasm module initialized successfully
+      module => {
+        initializing = false;
+        initialized = true;
+        wasm = module;
+        resolve();
+      },
+      // wasm module failed to initialize
+      (what) => {
+        initializing = false;
+        aborted = true;
+        reject(what);
+      });
   }));
 
   await Promise.race(tasks);
